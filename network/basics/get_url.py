@@ -75,6 +75,14 @@ options:
     choices: [ "yes", "no" ]
     default: "no"
     aliases: [ "thirsty" ]
+  backup:
+    description:
+      - Create a backup file including the timestamp information so you can get
+        the original file back if you somehow clobbered it incorrectly.
+    required: false
+    choices: [ "yes", "no" ]
+    default: "no"
+    version_added: '2.1'
   sha256sum:
     description:
       - If a SHA-256 checksum is passed to this parameter, the digest of the
@@ -90,8 +98,8 @@ options:
         destination file will be calculated after it is downloaded to ensure
         its integrity and verify that the transfer completed successfully.
         Format: <algorithm>:<checksum>, e.g.: checksum="sha256:D98291AC[...]B6DC7B97"
-        If you worry about portability, only the sha1 algorithm is available 
-        on all platforms and python versions.  The third party hashlib 
+        If you worry about portability, only the sha1 algorithm is available
+        on all platforms and python versions.  The third party hashlib
         library can be installed for access to additional algorithms.
         Additionaly, if a checksum is passed to this parameter, and the file exist under
         the C(dest) location, the destination_checksum would be calculated, and if
@@ -116,7 +124,7 @@ options:
     choices: ['yes', 'no']
   timeout:
     description:
-      - Timeout for URL request
+      - Timeout in seconds for URL request
     required: false
     default: 10
     version_added: '1.8'
@@ -246,11 +254,11 @@ def extract_filename_from_headers(headers):
 # main
 
 def main():
-
     argument_spec = url_argument_spec()
     argument_spec.update(
         url = dict(required=True),
         dest = dict(required=True),
+        backup = dict(default=False, type='bool'),
         sha256sum = dict(default=''),
         checksum = dict(default=''),
         timeout = dict(required=False, type='int', default=10),
@@ -266,6 +274,7 @@ def main():
 
     url  = module.params['url']
     dest = os.path.expanduser(module.params['dest'])
+    backup = module.params['backup']
     force = module.params['force']
     sha256sum = module.params['sha256sum']
     checksum = module.params['checksum']
@@ -301,7 +310,6 @@ def main():
         except ValueError:
             module.fail_json(msg="The checksum parameter has to be in format <algorithm>:<checksum>")
 
-
     if not dest_is_dir and os.path.exists(dest):
         checksum_mismatch = False
 
@@ -317,7 +325,15 @@ def main():
 
         # Not forcing redownload, unless checksum does not match
         if not force and not checksum_mismatch:
-            module.exit_json(msg="file already exists", dest=dest, url=url, changed=False)
+            # allow file attribute changes
+            module.params['path'] = dest
+            file_args = module.load_file_common_arguments(module.params)
+            file_args['path'] = dest
+            changed = module.set_fs_attributes_if_different(file_args, False)
+
+            if changed:
+                module.exit_json(msg="file already exists but file attributes changed", dest=dest, url=url, changed=changed)
+            module.exit_json(msg="file already exists", dest=dest, url=url, changed=changed)
 
         # If the file already exists, prepare the last modified time for the
         # request.
@@ -366,8 +382,12 @@ def main():
             os.remove(tmpsrc)
             module.fail_json( msg="Destination %s not writable" % (os.path.dirname(dest)))
 
+    backup_file = None
     if checksum_src != checksum_dest:
         try:
+            if backup:
+                if os.path.exists(dest):
+                    backup_file = module.backup_local(dest)
             shutil.copyfile(tmpsrc, dest)
         except Exception, err:
             os.remove(tmpsrc)
@@ -397,9 +417,15 @@ def main():
     except ValueError:
         md5sum = None
 
+    res_args = dict(
+        url = url, dest = dest, src = tmpsrc, md5sum = md5sum, checksum_src = checksum_src,
+        checksum_dest = checksum_dest, changed = changed, msg = info.get('msg', '')
+    )
+    if backup_file:
+        res_args['backup_file'] = backup_file
+
     # Mission complete
-    module.exit_json(url=url, dest=dest, src=tmpsrc, md5sum=md5sum, checksum_src=checksum_src,
-        checksum_dest=checksum_dest, changed=changed, msg=info.get('msg', ''))
+    module.exit_json(**res_args)
 
 # import module snippets
 from ansible.module_utils.basic import *

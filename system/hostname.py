@@ -28,9 +28,10 @@ version_added: "1.4"
 short_description: Manage hostname
 requirements: [ hostname ]
 description:
-    - Set system's hostname
+    - Set system's hostname.
     - Currently implemented on Debian, Ubuntu, Fedora, RedHat, openSUSE, Linaro, ScientificLinux, Arch, CentOS, AMI.
-    - Any distribution that uses systemd as their init system
+    - Any distribution that uses systemd as their init system.
+    - Note, this module does *NOT* modify /etc/hosts. You need to modify it yourself using other modules like template or replace.
 options:
     name:
         required: true
@@ -184,6 +185,42 @@ class DebianStrategy(GenericStrategy):
             self.module.fail_json(msg="failed to update hostname: %s" %
                 str(err))
 
+# ===========================================
+
+class SLESStrategy(GenericStrategy):
+    """
+    This is a SLES Hostname strategy class - it edits the
+    /etc/HOSTNAME file.
+    """
+    HOSTNAME_FILE = '/etc/HOSTNAME'
+
+    def get_permanent_hostname(self):
+        if not os.path.isfile(self.HOSTNAME_FILE):
+            try:
+                open(self.HOSTNAME_FILE, "a").write("")
+            except IOError, err:
+                self.module.fail_json(msg="failed to write file: %s" %
+                    str(err))
+        try:
+            f = open(self.HOSTNAME_FILE)
+            try:
+                return f.read().strip()
+            finally:
+                f.close()
+        except Exception, err:
+            self.module.fail_json(msg="failed to read hostname: %s" %
+                str(err))
+
+    def set_permanent_hostname(self, name):
+        try:
+            f = open(self.HOSTNAME_FILE, 'w+')
+            try:
+                f.write("%s\n" % name)
+            finally:
+                f.close()
+        except Exception, err:
+            self.module.fail_json(msg="failed to update hostname: %s" %
+                str(err))
 
 # ===========================================
 
@@ -461,6 +498,8 @@ class SLESHostname(Hostname):
     distribution_version = get_distribution_version()
     if distribution_version and LooseVersion(distribution_version) >= LooseVersion("12"):
         strategy_class = SystemdStrategy
+    elif distribution_version and LooseVersion("10") <= LooseVersion(distribution_version) <= LooseVersion("12"):
+        strategy_class = SLESStrategy
     else:
         strategy_class = UnimplementedStrategy
 

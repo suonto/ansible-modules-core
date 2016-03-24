@@ -63,6 +63,13 @@ options:
         required: false
         default: 'yes'
         choices: ['yes', 'no']
+    filename:
+        version_added: '2.1'
+        description:
+            - Sets the name of the source list file in sources.list.d.
+              Defaults to a file name based on the repository source url.
+              The .list extension will be automatically added.
+        required: false
 author: "Alexander Saltanov (@sashka)"
 version_added: "0.7"
 requirements: [ python-apt ]
@@ -71,6 +78,9 @@ requirements: [ python-apt ]
 EXAMPLES = '''
 # Add specified repository into sources list.
 apt_repository: repo='deb http://archive.canonical.com/ubuntu hardy partner' state=present
+
+# Add specified repository into sources list using specified filename.
+apt_repository: repo='deb http://dl.google.com/linux/chrome/deb/ stable main' state=present filename='google-chrome'
 
 # Add source repository into sources list.
 apt_repository: repo='deb-src http://archive.canonical.com/ubuntu hardy partner' state=present
@@ -106,7 +116,10 @@ def install_python_apt(module):
     if not module.check_mode:
         apt_get_path = module.get_bin_path('apt-get')
         if apt_get_path:
-            rc, so, se = module.run_command('%s update && %s install python-apt -y -q' % (apt_get_path, apt_get_path), use_unsafe_shell=True)
+            rc, so, se = module.run_command([apt_get_path, 'update'])
+            if rc != 0:
+                module.fail_json(msg="Failed to auto-install python-apt. Error was: '%s'" % se.strip())
+            rc, so, se = module.run_command([apt_get_path, 'install', 'python-apt', '-y', '-q'])
             if rc == 0:
                 global apt, apt_pkg, aptsources_distro, distro, HAVE_PYTHON_APT
                 import apt
@@ -116,6 +129,8 @@ def install_python_apt(module):
                 HAVE_PYTHON_APT = True
             else:
                 module.fail_json(msg="Failed to auto-install python-apt. Error was: '%s'" % se.strip())
+    else:
+        module.fail_json(msg="python-apt must be installed to use check mode")
 
 class InvalidSource(Exception):
     pass
@@ -155,6 +170,9 @@ class SourcesList(object):
 
     def _suggest_filename(self, line):
         def _cleanup_filename(s):
+            filename = self.module.params['filename']
+            if filename is not None:
+                return filename
             return '_'.join(re.sub('[^a-zA-Z0-9]', ' ', s).split())
         def _strip_username_password(s):
             if '@' in s:
@@ -269,7 +287,22 @@ class SourcesList(object):
                     os.remove(filename)
 
     def dump(self):
-        return '\n'.join([str(i) for i in self])
+        dumpstruct = {}
+        for filename, sources in self.files.items():
+            if sources:
+                lines = []
+                for n, valid, enabled, source, comment in sources:
+                    chunks = []
+                    if not enabled:
+                        chunks.append('# ')
+                    chunks.append(source)
+                    if comment:
+                        chunks.append(' # ')
+                        chunks.append(comment)
+                    chunks.append('\n')
+                    lines.append(''.join(chunks))
+                dumpstruct[filename] = ''.join(lines)
+        return dumpstruct
 
     def _choice(self, new, old):
         if new is None:
@@ -420,6 +453,7 @@ def main():
             state=dict(choices=['present', 'absent'], default='present'),
             mode=dict(required=False, default=0644),
             update_cache = dict(aliases=['update-cache'], type='bool', default='yes'),
+            filename=dict(required=False, default=None),
             # this should not be needed, but exists as a failsafe
             install_python_apt=dict(required=False, default="yes", type='bool'),
             validate_certs = dict(default='yes', type='bool'),
@@ -460,7 +494,17 @@ def main():
     sources_after = sourceslist.dump()
     changed = sources_before != sources_after
 
-    if not module.check_mode and changed:
+    if changed and module._diff:
+        diff = []
+        for filename in set(sources_before.keys()).union(sources_after.keys()):
+            diff.append({'before': sources_before.get(filename, ''),
+                         'after': sources_after.get(filename, ''),
+                         'before_header': (filename, '/dev/null')[filename not in sources_before],
+                         'after_header': (filename, '/dev/null')[filename not in sources_after]})
+    else:
+        diff = {}
+
+    if changed and not module.check_mode:
         try:
             sourceslist.save()
             if update_cache:
@@ -469,7 +513,7 @@ def main():
         except OSError, err:
             module.fail_json(msg=unicode(err))
 
-    module.exit_json(changed=changed, repo=repo, state=state)
+    module.exit_json(changed=changed, repo=repo, state=state, diff=diff)
 
 # import module snippets
 from ansible.module_utils.basic import *

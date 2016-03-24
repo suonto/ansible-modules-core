@@ -243,7 +243,6 @@ def create_image(module, ec2):
             for img in images:
                 if img.name == name:
                     module.exit_json(msg="AMI name already present", image_id=img.id, state=img.state, changed=False)
-                    sys.exit(0)
             else:
                 module.fail_json(msg="Error in retrieving duplicate AMI details")
         else:
@@ -321,7 +320,6 @@ def deregister_image(module, ec2):
         module.fail_json(msg = "timed out waiting for image to be reregistered/deleted")
 
     module.exit_json(msg="AMI deregister/delete operation complete", changed=True)
-    sys.exit(0)
 
 
 def update_image(module, ec2):
@@ -379,7 +377,7 @@ def main():
     try:
         ec2 = ec2_connect(module)
     except Exception, e:
-        module.json_fail(msg="Error while connecting to aws: %s" % str(e))
+        module.fail_json(msg="Error while connecting to aws: %s" % str(e))
 
     if module.params.get('state') == 'absent':
         if not module.params.get('image_id'):

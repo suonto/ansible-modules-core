@@ -84,10 +84,9 @@ options:
     version_added: "1.6"
   mode:
     description:
-      - Switches the module behaviour between put (upload), get (download), geturl (return download url (Ansible 1.3+), getstr (download object as string (1.3+)), list (list keys (2.0+)), create (bucket), delete (bucket), and delobj (delete object).
+      - Switches the module behaviour between put (upload), get (download), geturl (return download url, Ansible 1.3+), getstr (download object as string (1.3+)), list (list keys, Ansible 2.0+), create (bucket), delete (bucket), and delobj (delete object, Ansible 2.0+).
     required: true
-    default: null
-    aliases: []
+    choices: ['get', 'put', 'delete', 'create', 'geturl', 'getstr', 'delobj', 'list']
   object:
     description:
       - Keyname of the object inside the bucket. Can be used to create "virtual directories", see examples.
@@ -95,7 +94,7 @@ options:
     default: null
   permission:
     description:
-      - This option let's the user set the canned permissions on the object/bucket that are created. The permissions that can be set are 'private', 'public-read', 'public-read-write', 'authenticated-read'. Multiple permissions can be specified as a list.
+      - This option lets the user set the canned permissions on the object/bucket that are created. The permissions that can be set are 'private', 'public-read', 'public-read-write', 'authenticated-read'. Multiple permissions can be specified as a list.
     required: false
     default: private
     version_added: "2.0"
@@ -114,7 +113,7 @@ options:
     version_added: "2.0"
   overwrite:
     description:
-      - Force overwrite either locally on the filesystem or remotely with the object/key. Used with PUT and GET operations.
+      - Force overwrite either locally on the filesystem or remotely with the object/key. Used with PUT and GET operations. Boolean or one of [Always, Never, Different], new in 2.0
     required: false
     default: true
     version_added: "1.2"
@@ -180,7 +179,7 @@ EXAMPLES = '''
 # Delete a bucket and all contents
 - s3: bucket=mybucket mode=delete
 
-# GET an object but dont download if the file checksums match
+# GET an object but dont download if the file checksums match. New in 2.0
 - s3: bucket=mybucket object=/my/desired/key.txt dest=/usr/local/myfile.txt mode=get overwrite=different
 
 # Delete an object from a bucket
@@ -460,7 +459,8 @@ def main():
             walrus = urlparse.urlparse(s3_url).hostname
             s3 = boto.connect_walrus(walrus, **aws_connect_kwargs)
         else:
-            s3 = boto.s3.connect_to_region(location, is_secure=True, **aws_connect_kwargs)
+            aws_connect_kwargs['is_secure'] = True
+            s3 = connect_to_aws(boto.s3, location, **aws_connect_kwargs)
             # use this as fallback because connect_to_region seems to fail in boto + non 'classic' aws accounts in some cases
             if s3 is None:
                 s3 = boto.connect_s3(**aws_connect_kwargs)
@@ -521,7 +521,6 @@ def main():
 
         # Use this snippet to debug through conditionals:
 #       module.exit_json(msg="Bucket return %s"%bucketrtn)
-#       sys.exit(0)
 
         # Lets check the src path.
         pathrtn = path_check(src)

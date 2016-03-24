@@ -131,7 +131,7 @@ def main():
         filename          = dict(default=None),
         ramdisk           = dict(default=None),
         kernel            = dict(default=None),
-        properties        = dict(default={}),
+        properties        = dict(type='dict', default={}),
         state             = dict(default='present', choices=['absent', 'present']),
     )
     module_kwargs = openstack_module_kwargs()
@@ -183,7 +183,7 @@ def main():
             module.exit_json(changed=changed)
 
     except shade.OpenStackCloudException as e:
-        module.fail_json(msg=e.message, extra_data=e.extra_data)
+        module.fail_json(msg=str(e), extra_data=e.extra_data)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

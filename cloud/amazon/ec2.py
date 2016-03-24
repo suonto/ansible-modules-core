@@ -236,7 +236,7 @@ options:
   count_tag:
     version_added: "1.5"
     description:
-      - Used with 'exact_count' to determine how many nodes based on a specific tag criteria should be running.  This can be expressed in multiple ways and is shown in the EXAMPLES section.  For instance, one can request 25 servers that are tagged with "class=webserver".
+      - Used with 'exact_count' to determine how many nodes based on a specific tag criteria should be running.  This can be expressed in multiple ways and is shown in the EXAMPLES section.  For instance, one can request 25 servers that are tagged with "class=webserver". The specified tag must already exist or be passed in as the 'instance_tags' option.
     required: false
     default: null
     aliases: []
@@ -428,7 +428,7 @@ EXAMPLES = '''
 
 - name: Configure instance(s)
   hosts: launched
-  sudo: True
+  become: True
   gather_facts: True
   roles:
     - my_awesome_role
@@ -465,7 +465,7 @@ EXAMPLES = '''
         wait: True
         vpc_subnet_id: subnet-29e63245
         assign_public_ip: yes
-  role:
+  roles:
     - do_neat_stuff
     - do_more_neat_stuff
 
@@ -1390,7 +1390,7 @@ def main():
 
     if region:
         try:
-            vpc = boto.vpc.connect_to_region(region, **aws_connect_kwargs)
+            vpc = connect_to_aws(boto.vpc, region, **aws_connect_kwargs)
         except boto.exception.NoAuthHandlerFound, e:
             module.fail_json(msg = str(e))
     else:
